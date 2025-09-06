@@ -72,17 +72,22 @@ export default async function handler(req, res) {
     // Handle slash commands
     if (type === InteractionType.APPLICATION_COMMAND) {
       console.log('Command received:', data?.name);
+      console.log('Channel type:', data?.channel_type);
+      console.log('Guild ID:', data?.guild_id);
 
       const commandName = data?.name;
+      const isInDM = !data?.guild_id; // If no guild_id, it's a DM
       
       switch (commandName) {
         case 'vping':
           const startTime = Date.now();
           const ping = Date.now() - startTime;
+          const location = isInDM ? 'DM' : 'Server';
           return res.status(200).json({
             type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
             data: {
-              content: `🏓 Pong! Response time: ${ping}ms\n✅ Bot is running on Vercel`,
+              content: `🏓 Pong! Response time: ${ping}ms\n✅ Bot is running on Vercel\n📍 Location: ${location}`,
+              flags: isInDM ? 64 : 0 // Ephemeral in DMs
             },
           });
           
@@ -90,15 +95,47 @@ export default async function handler(req, res) {
           return res.status(200).json({
             type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
             data: {
-              content: `📊 **Bot Status**\n✅ Online and running on Vercel\n🔗 Endpoint: https://verification-bot-endpoint.vercel.app/\n📝 Available commands: /verify, /verifycode, /vping, /vstatus`,
+              content: `📊 **Bot Status**\n✅ Online and running on Vercel (Webhook-only)\n🔗 Endpoint: https://verification-bot-endpoint.vercel.app/\n📝 Available commands: /verify, /verifycode, /vping, /vstatus\n📍 Context: ${isInDM ? 'Direct Message' : 'Server Channel'}`,
+              flags: isInDM ? 64 : 0 // Ephemeral in DMs
             },
           });
           
         case 'verify':
+          if (isInDM) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `📧 **Email Verification**\n\n⚠️ **DM Limitation**: Email verification must be done in a server channel for security reasons.\n\nTo verify your email:\n1. Go to a server where this bot is present\n2. Use /verify in a channel\n3. Follow the verification process\n\n*Commands like /vping and /vstatus work in DMs, but verification requires server context for role assignment.*`,
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+          
+          // Handle server verification (implement full verification flow here)
           return res.status(200).json({
             type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
             data: {
-              content: `📧 **Email Verification**\n\nTo verify your email and get access to the server, please:\n1. Use the /verify command in a server channel (not DM)\n2. Enter your email address when prompted\n3. Check your email for a verification code\n4. Use /verifycode to complete verification\n\n*Note: This command works in server channels only.*`,
+              content: `📧 **Email Verification Started**\n\nPlease check your DMs for further instructions, or use this channel for verification.\n\n*Note: This is where the email verification modal would appear in the full implementation.*`,
+              flags: 64 // Ephemeral
+            },
+          });
+          
+        case 'verifycode':
+          if (isInDM) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `🔐 **Verification Code**\n\n⚠️ **DM Limitation**: Code verification must be done in the server where you want to get verified.\n\nPlease use this command in the server channel where you started verification.`,
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+          
+          const code = data?.options?.find(opt => opt.name === 'code')?.value;
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: `🔐 **Verification Code Received**: \`${code}\`\n\n*Note: This is where the code verification logic would run in the full implementation.*`,
               flags: 64 // Ephemeral
             },
           });
@@ -107,7 +144,8 @@ export default async function handler(req, res) {
           return res.status(200).json({
             type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
             data: {
-              content: `✅ Command /${commandName} received! Bot is working on Vercel.`,
+              content: `✅ Command /${commandName} received! Bot is working on Vercel.\n📍 Location: ${isInDM ? 'DM' : 'Server'}`,
+              flags: isInDM ? 64 : 0
             },
           });
       }
