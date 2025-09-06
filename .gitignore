@@ -1,0 +1,41 @@
+# Ignore node_modules directory
+node_modules/
+CODE/
+
+# Ignore log files
+*.log
+
+# Ignore environment variable files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+csi_bot.db
+bot.db
+
+
+# Ignore build directories
+dist/
+build/
+
+# Ignore OS generated files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE specific files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Ignore coverage reports
+coverage/
+
+.env
+env.local
+.env.example
