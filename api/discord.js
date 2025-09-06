@@ -73,12 +73,44 @@ export default async function handler(req, res) {
     if (type === InteractionType.APPLICATION_COMMAND) {
       console.log('Command received:', data?.name);
 
-      return res.status(200).json({
-        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: {
-          content: `✅ Command /${data?.name} received! Bot is working on Vercel.`,
-        },
-      });
+      const commandName = data?.name;
+      
+      switch (commandName) {
+        case 'vping':
+          const startTime = Date.now();
+          const ping = Date.now() - startTime;
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: `🏓 Pong! Response time: ${ping}ms\n✅ Bot is running on Vercel`,
+            },
+          });
+          
+        case 'vstatus':
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: `📊 **Bot Status**\n✅ Online and running on Vercel\n🔗 Endpoint: https://verification-bot-endpoint.vercel.app/\n📝 Available commands: /verify, /verifycode, /vping, /vstatus`,
+            },
+          });
+          
+        case 'verify':
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: `📧 **Email Verification**\n\nTo verify your email and get access to the server, please:\n1. Use the /verify command in a server channel (not DM)\n2. Enter your email address when prompted\n3. Check your email for a verification code\n4. Use /verifycode to complete verification\n\n*Note: This command works in server channels only.*`,
+              flags: 64 // Ephemeral
+            },
+          });
+          
+        default:
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: `✅ Command /${commandName} received! Bot is working on Vercel.`,
+            },
+          });
+      }
     }
 
     // Handle modal submissions
