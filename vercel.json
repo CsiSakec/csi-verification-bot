@@ -1,5 +1,8 @@
 {
   "functions": {
+    "api/index.js": {
+      "maxDuration": 30
+    },
     "api/discord.js": {
       "maxDuration": 30
     },
@@ -7,9 +10,15 @@
       "maxDuration": 30
     }
   },
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/api"
+    }
+  ],
   "headers": [
     {
-      "source": "/api/(.*)",
+      "source": "/(.*)",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
@@ -21,7 +30,7 @@
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization"
+          "value": "Content-Type, Authorization, X-Signature-Ed25519, X-Signature-Timestamp"
         }
       ]
     }
