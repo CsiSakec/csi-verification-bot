@@ -1,7 +1,6 @@
 const { verifyKeyMiddleware, InteractionType, InteractionResponseType } = require('discord-interactions');
 const mongoose = require('mongoose');
 const nodemailer = require('nodemailer');
-require('dotenv').config();
 
 // Connect to MongoDB
 if (mongoose.connection.readyState === 0) {
@@ -70,9 +69,29 @@ const sendVerificationEmail = async (email, verificationCode) => {
 const verifyDiscordRequest = verifyKeyMiddleware(process.env.DISCORD_PUBLIC_KEY);
 
 export default async function handler(req, res) {
-  // Verify the request
-  await verifyDiscordRequest(req, res, async () => {
-    const { type, data, member, guild_id } = req.body;
+  // Add CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Signature-Ed25519, X-Signature-Timestamp');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  console.log('Received request:', {
+    method: req.method,
+    headers: req.headers,
+    body: req.body
+  });
+
+  try {
+    // Use the verifyKeyMiddleware
+    return verifyDiscordRequest(req, res, async () => {
+      const { type, data, member, guild_id } = req.body;
 
     // Handle ping
     if (type === InteractionType.PING) {
@@ -431,5 +450,9 @@ Verified role: ${verifiedRole}
     }
 
     return res.status(400).json({ error: 'Unknown interaction type' });
-  });
+    });
+  } catch (error) {
+    console.error('Error in Discord handler:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 }
