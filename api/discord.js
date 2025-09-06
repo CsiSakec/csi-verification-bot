@@ -12,7 +12,8 @@ export default async function handler(req, res) {
     hasSignature: !!req.headers['x-signature-ed25519'],
     hasTimestamp: !!req.headers['x-signature-timestamp'],
     bodyType: typeof req.body,
-    contentType: req.headers['content-type']
+    contentType: req.headers['content-type'],
+    fullBody: req.body // Log the full body to see if DM interactions are coming through
   });
 
   if (req.method === 'OPTIONS') {
