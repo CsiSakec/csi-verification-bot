@@ -10,7 +10,9 @@ export default async function handler(req, res) {
     method: req.method,
     url: req.url,
     hasSignature: !!req.headers['x-signature-ed25519'],
-    hasTimestamp: !!req.headers['x-signature-timestamp']
+    hasTimestamp: !!req.headers['x-signature-timestamp'],
+    bodyType: typeof req.body,
+    contentType: req.headers['content-type']
   });
 
   if (req.method === 'OPTIONS') {
@@ -35,12 +37,15 @@ export default async function handler(req, res) {
   
   // For Discord requests, verify signature
   if (signature && timestamp) {
-    const rawBody = JSON.stringify(req.body);
+    console.log('Verifying Discord signature...');
     
     try {
+      // Try with stringified body first
+      let rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+      
       const isValidRequest = verifyKey(rawBody, signature, timestamp, process.env.DISCORD_PUBLIC_KEY);
       if (!isValidRequest) {
-        console.log('Invalid Discord signature');
+        console.log('Signature verification failed');
         return res.status(401).json({ error: 'Bad request signature' });
       }
       console.log('Discord signature verified successfully');
@@ -49,7 +54,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Bad request signature' });
     }
   } else {
-    console.log('Test request without Discord signatures');
+    console.log('Test request without Discord signatures - allowing through');
   }
 
   try {
@@ -76,11 +81,24 @@ export default async function handler(req, res) {
       });
     }
 
+    // Handle modal submissions
+    if (type === InteractionType.MODAL_SUBMIT) {
+      console.log('Modal submission received');
+      return res.status(200).json({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: {
+          content: '✅ Modal submission received!',
+          flags: 64 // Ephemeral
+        },
+      });
+    }
+
     // Default response for unknown interaction types
+    console.log('Unknown interaction type:', type);
     return res.status(200).json({
       type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
       data: {
-        content: 'Bot received an unknown interaction type.',
+        content: `Bot received interaction type: ${type}`,
       },
     });
 
