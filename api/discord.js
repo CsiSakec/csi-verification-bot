@@ -1,6 +1,27 @@
-const { verifyKeyMiddleware, InteractionType, InteractionResponseType } = require('discord-interactions');
+const { InteractionType, InteractionResponseType } = require('discord-interactions');
 const mongoose = require('mongoose');
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+
+// Discord signature verification function
+function verifySignature(rawBody, signature, timestamp, publicKey) {
+  try {
+    const timestampedBody = timestamp + rawBody;
+    const isValid = crypto.verify(
+      'ed25519',
+      Buffer.from(timestampedBody),
+      {
+        key: Buffer.from(publicKey, 'hex'),
+        format: 'raw'
+      },
+      Buffer.from(signature, 'hex')
+    );
+    return isValid;
+  } catch (error) {
+    console.error('Signature verification error:', error);
+    return false;
+  }
+}
 
 // Connect to MongoDB
 if (mongoose.connection.readyState === 0) {
@@ -65,9 +86,6 @@ const sendVerificationEmail = async (email, verificationCode) => {
   }
 };
 
-// Verify Discord signature middleware
-const verifyDiscordRequest = verifyKeyMiddleware(process.env.DISCORD_PUBLIC_KEY);
-
 export default async function handler(req, res) {
   // Add CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -82,16 +100,30 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  console.log('Received request:', {
-    method: req.method,
-    headers: req.headers,
-    body: req.body
-  });
-
   try {
-    // For now, let's handle basic interactions without strict verification for testing
-    const { type, data, member, guild_id } = req.body;
+    // Get Discord signature headers
+    const signature = req.headers['x-signature-ed25519'];
+    const timestamp = req.headers['x-signature-timestamp'];
+    
+    console.log('Received interaction:', {
+      hasSignature: !!signature,
+      hasTimestamp: !!timestamp,
+      bodyType: typeof req.body,
+      body: req.body
+    });
 
+    // For testing, we'll be more lenient with signature verification
+    if (signature && timestamp && process.env.DISCORD_PUBLIC_KEY) {
+      const rawBody = JSON.stringify(req.body);
+      const isValid = verifySignature(rawBody, signature, timestamp, process.env.DISCORD_PUBLIC_KEY);
+      
+      if (!isValid) {
+        console.log('Invalid signature');
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
+    }
+
+    const { type, data, member, guild_id } = req.body;
     console.log('Processing interaction type:', type);
 
     // Handle ping
