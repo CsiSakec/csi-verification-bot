@@ -1,5 +1,8 @@
 // Simple Discord bot endpoint for Vercel
-const { InteractionType, InteractionResponseType } = require('discord-interactions');
+const { verifyKeyMiddleware, InteractionType, InteractionResponseType } = require('discord-interactions');
+
+// Use Discord's built-in signature verification middleware
+const verifyDiscordRequest = verifyKeyMiddleware(process.env.DISCORD_PUBLIC_KEY);
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -15,45 +18,48 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  try {
-    console.log('Discord interaction received:', req.body);
-    
-    const { type } = req.body;
+  // Use Discord's signature verification
+  return verifyDiscordRequest(req, res, () => {
+    try {
+      console.log('Discord interaction received (verified):', req.body);
+      
+      const { type } = req.body;
 
-    // Handle Discord PING for endpoint verification
-    if (type === InteractionType.PING) {
-      console.log('Responding to Discord PING');
-      return res.status(200).json({ 
-        type: InteractionResponseType.PONG 
-      });
-    }
+      // Handle Discord PING for endpoint verification
+      if (type === InteractionType.PING) {
+        console.log('Responding to Discord PING');
+        return res.status(200).json({ 
+          type: InteractionResponseType.PONG 
+        });
+      }
 
-    // Handle slash commands
-    if (type === InteractionType.APPLICATION_COMMAND) {
-      const { data } = req.body;
-      console.log('Command received:', data.name);
+      // Handle slash commands
+      if (type === InteractionType.APPLICATION_COMMAND) {
+        const { data } = req.body;
+        console.log('Command received:', data.name);
 
+        return res.status(200).json({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: {
+            content: `✅ Command /${data.name} received! Bot is working on Vercel.`,
+          },
+        });
+      }
+
+      // Default response for unknown interaction types
       return res.status(200).json({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
         data: {
-          content: `✅ Command /${data.name} received! Bot is working on Vercel.`,
+          content: 'Bot received an unknown interaction type.',
         },
       });
+
+    } catch (error) {
+      console.error('Discord endpoint error:', error);
+      return res.status(500).json({ 
+        error: 'Internal server error', 
+        details: error.message 
+      });
     }
-
-    // Default response for unknown interaction types
-    return res.status(200).json({
-      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-      data: {
-        content: 'Bot received an unknown interaction type.',
-      },
-    });
-
-  } catch (error) {
-    console.error('Discord endpoint error:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
-  }
+  });
 }
