@@ -142,10 +142,14 @@ export default async function handler(req, res) {
     // Handle slash commands
     if (type === InteractionType.APPLICATION_COMMAND) {
       console.log('Command received:', data?.name);
-      console.log('Guild ID:', data?.guild_id);
-
+      console.log('Full request body:', JSON.stringify(req.body, null, 2));
+      
       const commandName = data?.name;
-      const isInServer = !!data?.guild_id;
+      const guildId = req.body.guild_id || data?.guild_id;
+      const isInServer = !!guildId;
+      
+      console.log('Guild ID detected:', guildId);
+      console.log('Is in server:', isInServer);
       
       switch (commandName) {
         case 'vping':
@@ -154,14 +158,13 @@ export default async function handler(req, res) {
           return res.status(200).json({
             type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
             data: {
-              content: `🏓 **Pong!**\n⚡ Response time: ${ping}ms\n✅ Bot is running on Vercel\n🌐 Webhook-only architecture\n📍 Server: ${data?.guild_id || 'Unknown'}`,
+              content: `🏓 **Pong!**\n⚡ Response time: ${ping}ms\n✅ Bot is running on Vercel\n🌐 Webhook-only architecture\n📍 Server: ${guildId || 'Unknown'}`,
               flags: 64 // Ephemeral
             },
           });
           
         case 'vstatus':
           try {
-            const guildId = data?.guild_id;
             let guildInfo = '';
             
             if (guildId) {
@@ -202,7 +205,7 @@ export default async function handler(req, res) {
           
         case 'verify':
           // Check if user is in a server
-          if (!data?.guild_id) {
+          if (!guildId) {
             return res.status(200).json({
               type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
               data: {
@@ -240,7 +243,6 @@ export default async function handler(req, res) {
         case 'verifycode':
           const code = data?.options?.find(opt => opt.name === 'code')?.value;
           const userId = req.body.member?.user?.id || req.body.user?.id;
-          const guildId = data?.guild_id;
 
           if (!code) {
             return res.status(200).json({
