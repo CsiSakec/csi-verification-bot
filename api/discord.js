@@ -296,7 +296,7 @@ export default async function handler(req, res) {
 
             // Get guild data for role name
             const guildData = await Guild.findOne({ guildid: guildId });
-            const roleName = guildData?.role || 'Verified';
+            const roleName = guildData?.role || 'verified';
 
             // Add role using Discord API
             try {
@@ -309,7 +309,25 @@ export default async function handler(req, res) {
 
               if (rolesResponse.ok) {
                 const roles = await rolesResponse.json();
-                const verifiedRole = roles.find(role => role.name === roleName);
+                
+                // First try exact match, then case-insensitive match
+                let verifiedRole = roles.find(role => role.name === roleName);
+                
+                if (!verifiedRole) {
+                  // Try case-insensitive search
+                  verifiedRole = roles.find(role => role.name.toLowerCase() === roleName.toLowerCase());
+                  
+                  // If found with different case, update the guild config to match the actual role name
+                  if (verifiedRole) {
+                    console.log(`Found role with different case: "${verifiedRole.name}" (expected: "${roleName}")`);
+                    await Guild.updateOne(
+                      { guildid: guildId },
+                      { role: verifiedRole.name },
+                      { upsert: true }
+                    );
+                    console.log(`Updated guild config to use role name: "${verifiedRole.name}"`);
+                  }
+                }
 
                 if (verifiedRole) {
                   const addRoleResponse = await fetch(
@@ -327,7 +345,7 @@ export default async function handler(req, res) {
                     return res.status(200).json({
                       type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
                       data: {
-                        content: `✅ **Email verification successful!**\n\n🎉 You have been verified and assigned the \`${roleName}\` role.\n📧 Email: \`${verificationRecord.email}\``,
+                        content: `✅ **Email verification successful!**\n\n🎉 You have been verified and assigned the \`${verifiedRole.name}\` role.\n📧 Email: \`${verificationRecord.email}\``,
                         flags: 64 // Ephemeral
                       },
                     });
@@ -335,10 +353,14 @@ export default async function handler(req, res) {
                     console.error('Failed to add role:', await addRoleResponse.text());
                   }
                 } else {
+                  // Log available roles for debugging
+                  const availableRoles = roles.filter(role => !role.managed && role.name !== '@everyone').map(role => role.name);
+                  console.log(`Role "${roleName}" not found. Available roles:`, availableRoles);
+                  
                   return res.status(200).json({
                     type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
                     data: {
-                      content: `✅ **Email verification successful!**\n\n⚠️ The \`${roleName}\` role was not found. Please contact an administrator to create the role and assign it manually.`,
+                      content: `✅ **Email verification successful!**\n\n⚠️ No role named \`${roleName}\` (or similar) was found.\n\n💡 Use \`/rolechange <exact_role_name>\` to set the correct role name.\n\n📋 Available roles: ${availableRoles.slice(0, 5).join(', ')}${availableRoles.length > 5 ? '...' : ''}`,
                       flags: 64 // Ephemeral
                     },
                   });
