@@ -12,6 +12,10 @@ const connectToDatabase = async () => {
     return;
   }
   
+  if (!process.env.MONGO_URI) {
+    throw new Error('MONGO_URI environment variable is not set');
+  }
+  
   try {
     await mongoose.connect(process.env.MONGO_URI, {
       bufferCommands: false,
@@ -22,7 +26,8 @@ const connectToDatabase = async () => {
     isConnected = true;
     console.log('Connected to MongoDB');
   } catch (error) {
-    console.error('MongoDB connection error:', error);
+    console.error('MongoDB connection error:', error.message);
+    isConnected = false;
     throw error;
   }
 };
@@ -91,8 +96,12 @@ export default async function handler(req, res) {
   try {
     await connectToDatabase();
   } catch (error) {
-    console.error('Database connection failed:', error);
-    return res.status(500).json({ error: 'Database connection failed' });
+    console.error('Database connection failed:', error.message);
+    return res.status(500).json({ 
+      error: 'Database connection failed',
+      details: error.message,
+      hasMongoUri: !!process.env.MONGO_URI
+    });
   }
 
   // Set CORS headers
