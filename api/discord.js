@@ -186,7 +186,7 @@ export default async function handler(req, res) {
             return res.status(200).json({
               type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
               data: {
-                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n🔗 **Endpoint**: https://verification-bot-endpoint.vercel.app/\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n🏠 **Context**: ${guildId ? 'Server Channel' : 'Direct Message'}\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\`${guildInfo}`,
+                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n🔗 **Endpoint**: https://verification-bot-endpoint.vercel.app/\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n🏠 **Context**: ${guildId ? 'Server Channel' : 'Direct Message'}\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\`, \`/resetuser\`${guildInfo}`,
                 flags: 64 // Ephemeral
               },
             });
@@ -195,7 +195,7 @@ export default async function handler(req, res) {
             return res.status(200).json({
               type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
               data: {
-                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n🔗 **Endpoint**: https://verification-bot-endpoint.vercel.app/\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\``,
+                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n🔗 **Endpoint**: https://verification-bot-endpoint.vercel.app/\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\`, \`/resetuser\``,
                 flags: 64 // Ephemeral
               },
             });
@@ -537,6 +537,56 @@ export default async function handler(req, res) {
               flags: 64 // Ephemeral
             },
           });
+
+        case 'resetuser':
+          const targetUser = data?.options?.find(opt => opt.name === 'user')?.value;
+          // Check if user has admin permissions
+          const memberPerms6 = req.body.member?.permissions;
+          if (!memberPerms6 || !(parseInt(memberPerms6) & 0x8)) { // Administrator permission
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ You need Administrator permissions to use this command.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          if (!targetUser) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ Please provide a user to reset.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          try {
+            // Remove all verification records for this user in this guild
+            const deleteResult = await User.deleteMany({
+              userid: targetUser,
+              guildid: guildId
+            });
+
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `✅ Reset verification status for <@${targetUser}>.\n\n📊 Removed ${deleteResult.deletedCount} verification record(s).\n\n💡 They can now use \`/verify\` to verify with a new email.`,
+                flags: 64 // Ephemeral
+              },
+            });
+
+          } catch (error) {
+            console.error('Error resetting user verification:', error);
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ An error occurred while resetting user verification.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
           
         default:
           return res.status(200).json({
@@ -593,10 +643,11 @@ export default async function handler(req, res) {
             await User.deleteOne({ _id: existingUser._id });
           }
 
-          // Check if user is already verified
+          // Check if user is already verified with this specific email
           const verifiedUser = await User.findOne({
             userid: userId,
             guildid: guildId,
+            email: emailInput.toLowerCase(),
             verified: true
           });
 
@@ -604,7 +655,42 @@ export default async function handler(req, res) {
             return res.status(200).json({
               type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
               data: {
-                content: '✅ You are already verified in this server!',
+                content: `✅ You are already verified in this server with the email \`${verifiedUser.email}\`!`,
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          // Check if user is verified with a different email
+          const verifiedUserDifferentEmail = await User.findOne({
+            userid: userId,
+            guildid: guildId,
+            verified: true
+          });
+
+          if (verifiedUserDifferentEmail) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `⚠️ You are already verified in this server with a different email (\`${verifiedUserDifferentEmail.email}\`).\n\nIf you need to change your verified email, please contact an administrator.`,
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          // Check if this email is already used by another user in this server
+          const emailAlreadyUsed = await User.findOne({
+            guildid: guildId,
+            email: emailInput.toLowerCase(),
+            verified: true,
+            userid: { $ne: userId } // Different user
+          });
+
+          if (emailAlreadyUsed) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `❌ The email \`${emailInput}\` is already verified by another user in this server.\n\n💡 Each email can only be used once per server.`,
                 flags: 64 // Ephemeral
               },
             });

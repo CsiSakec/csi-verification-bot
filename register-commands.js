@@ -70,6 +70,18 @@ const commands = [
       },
     ],
   },
+  {
+    name: 'resetuser',
+    description: 'Reset a user\'s verification status (Admin only)',
+    options: [
+      {
+        name: 'user',
+        type: 6, // USER
+        description: 'The user to reset verification for',
+        required: true,
+      },
+    ],
+  },
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
