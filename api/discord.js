@@ -4,12 +4,28 @@ const nodemailer = require('nodemailer');
 const fetch = require('node-fetch');
 require('dotenv').config();
 
-// Connect to MongoDB
-if (mongoose.connection.readyState === 0) {
-  mongoose.connect(process.env.MONGO_URI, {})
-    .then(() => console.log('Connected to MongoDB'))
-    .catch((err) => console.error(err));
-}
+// Connect to MongoDB with proper serverless handling
+let isConnected = false;
+
+const connectToDatabase = async () => {
+  if (isConnected && mongoose.connection.readyState === 1) {
+    return;
+  }
+  
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+      bufferCommands: false,
+      bufferMaxEntries: 0,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
+    isConnected = true;
+    console.log('Connected to MongoDB');
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    throw error;
+  }
+};
 
 // Schemas
 const UserSchema = new mongoose.Schema({
@@ -71,6 +87,14 @@ const sendVerificationEmail = async (email, verificationCode) => {
 };
 
 export default async function handler(req, res) {
+  // Ensure database connection
+  try {
+    await connectToDatabase();
+  } catch (error) {
+    console.error('Database connection failed:', error);
+    return res.status(500).json({ error: 'Database connection failed' });
+  }
+
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
