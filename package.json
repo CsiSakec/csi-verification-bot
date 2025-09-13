@@ -4,9 +4,7 @@
   "description": "CSI Discord Email Verification Bot",
   "main": "api/discord.js",
   "scripts": {
-    "test": "node test-local.js",
     "register-commands": "node register-commands.js",
-    "dev": "node local-dev.js",
     "vercel-dev": "vercel dev"
   },
   "author": "sudarshan date",

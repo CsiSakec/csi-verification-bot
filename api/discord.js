@@ -76,15 +76,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Signature-Ed25519, X-Signature-Timestamp');
 
-  console.log('Request received:', {
-    method: req.method,
-    url: req.url,
-    hasSignature: !!req.headers['x-signature-ed25519'],
-    hasTimestamp: !!req.headers['x-signature-timestamp'],
-    bodyType: typeof req.body,
-    contentType: req.headers['content-type'],
-    fullBody: req.body // Log the full body to see if DM interactions are coming through
-  });
+  console.log('Request received');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -108,7 +100,6 @@ export default async function handler(req, res) {
   
   // For Discord requests, verify signature
   if (signature && timestamp) {
-    console.log('Verifying Discord signature...');
     
     try {
       // Try with stringified body first
@@ -116,25 +107,21 @@ export default async function handler(req, res) {
       
       const isValidRequest = verifyKey(rawBody, signature, timestamp, process.env.DISCORD_PUBLIC_KEY);
       if (!isValidRequest) {
-        console.log('Signature verification failed');
         return res.status(401).json({ error: 'Bad request signature' });
       }
-      console.log('Discord signature verified successfully');
     } catch (error) {
       console.error('Signature verification error:', error);
       return res.status(401).json({ error: 'Bad request signature' });
     }
   } else {
-    console.log('Test request without Discord signatures - allowing through');
+    // Test request without Discord signatures
   }
 
   try {
     const { type, data } = req.body;
-    console.log('Processing interaction type:', type);
 
     // Handle PING for Discord endpoint verification
     if (type === InteractionType.PING) {
-      console.log('Responding to Discord PING');
       return res.status(200).json({ 
         type: InteractionResponseType.PONG 
       });
@@ -142,15 +129,10 @@ export default async function handler(req, res) {
 
     // Handle slash commands
     if (type === InteractionType.APPLICATION_COMMAND) {
-      console.log('Command received:', data?.name);
-      console.log('Full request body:', JSON.stringify(req.body, null, 2));
       
       const commandName = data?.name;
       const guildId = req.body.guild_id || data?.guild_id;
       const isInServer = !!guildId;
-      
-      console.log('Guild ID detected:', guildId);
-      console.log('Is in server:', isInServer);
       
       switch (commandName) {
         case 'vping':
@@ -319,13 +301,13 @@ export default async function handler(req, res) {
                   
                   // If found with different case, update the guild config to match the actual role name
                   if (verifiedRole) {
-                    console.log(`Found role with different case: "${verifiedRole.name}" (expected: "${roleName}")`);
+                    // Found role with different case - update config
                     await Guild.updateOne(
                       { guildid: guildId },
                       { role: verifiedRole.name },
                       { upsert: true }
                     );
-                    console.log(`Updated guild config to use role name: "${verifiedRole.name}"`);
+                    // Update guild config to use the correct role name
                   }
                 }
 
@@ -355,7 +337,7 @@ export default async function handler(req, res) {
                 } else {
                   // Log available roles for debugging
                   const availableRoles = roles.filter(role => !role.managed && role.name !== '@everyone').map(role => role.name);
-                  console.log(`Role "${roleName}" not found. Available roles:`, availableRoles);
+                  // Role not found
                   
                   return res.status(200).json({
                     type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
@@ -623,7 +605,7 @@ export default async function handler(req, res) {
 
     // Handle modal submissions
     if (type === InteractionType.MODAL_SUBMIT) {
-      console.log('Modal submission received');
+      // Handle modal submission
       const customId = data?.custom_id;
       const userId = req.body.member?.user?.id || req.body.user?.id;
       const guildId = req.body.guild_id;
@@ -796,7 +778,7 @@ export default async function handler(req, res) {
     }
 
     // Default response for unknown interaction types
-    console.log('Unknown interaction type:', type);
+    // Unknown interaction type
     return res.status(200).json({
       type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
       data: {
