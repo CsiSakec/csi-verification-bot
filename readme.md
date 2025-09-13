@@ -1,45 +1,113 @@
-# CSI Discord BOT
+# Discord Email Verification Bot
 
-CSI-Discord BOT is a powerful and flexible bot built using Node.js and MongoDB. It is designed to enhance your Discord server with various features and functionalities.
+A powerful Discord bot for email verification with role assignment. Built with Node.js, MongoDB, and designed for serverless deployment on Vercel.
 
 ## Features
 
-- **Moderation Tools**: Manage your server with ease using advanced moderation commands.
-- **Custom Commands**: Create and manage custom commands for your server.
-- **User Management**: Track and manage user activities and roles.
-- **Database Integration**: Store and retrieve data using MongoDB.
+- **Email Verification**: Users verify their email addresses to get server roles
+- **Domain Restrictions**: Admins can restrict verification to specific email domains
+- **Automatic Role Assignment**: Verified users automatically receive designated roles  
+- **Admin Controls**: Comprehensive admin commands for server management
+- **Serverless Architecture**: Runs efficiently on Vercel with webhook-only approach
+- **Database Integration**: MongoDB for persistent data storage
 
-## Installation
+## Setup Instructions
 
-1. Clone the repository:
+### 1. Clone and Install
 
-   ```bash
-   git clone https: git@github.com:SudarshanProCoder/CSI-BOT.git
-   cd CSI-BOT
-   ```
+```bash
+git clone https://github.com/your-repo/verification-bot-endpoint.git
+cd verification-bot-endpoint
+npm install
+```
 
-2. Install dependencies:
+### 2. Environment Variables
 
-   ```bash
-   npm install
-   ```
+Copy `.env.example` to `.env` and fill in your configuration:
 
-3. Set up environment variables:
-   Create a `.env` file in the root directory and add your Discord bot token and MongoDB connection string.
+```bash
+cp .env.example .env
+```
 
-   ```env
-   DISCORD_TOKEN=your_discord_token
-   MONGODB_URI=your_mongodb_connection_string
-   MAILGUN_API_KEY=your_api_key
-   SENDGRID_API_KEY=your_api_key
-   MAILGUN_DOMAIN=your_domain
-   EMAIL_USER=your_username
-   ```
+Required environment variables:
+- `DISCORD_TOKEN` - Your Discord bot token
+- `DISCORD_PUBLIC_KEY` - Your Discord bot public key  
+- `DISCORD_CLIENT_ID` - Your Discord application client ID
+- `MONGO_URI` - MongoDB connection string
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` - Email configuration
 
-4. Start the bot:
-   ```bash
-   npm start
-   ```
+### 3. Discord Bot Setup
+
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create a new application and bot
+3. Copy the token, public key, and client ID to your `.env` file
+4. Set the interactions endpoint URL to: `https://your-vercel-app.vercel.app/api/discord`
+
+### 4. Register Commands
+
+```bash
+npm run register-commands
+```
+
+### 5. Deploy
+
+**For Vercel deployment:**
+```bash
+npm install -g vercel
+vercel --prod
+```
+
+**For local development:**
+```bash
+npm run dev
+```
+
+## Usage
+
+### User Commands
+
+- `/verify` - Start the email verification process
+- `/verifycode <code>` - Complete verification with the 6-digit code from email
+- `/vping` - Check bot response time
+- `/vstatus` - Show bot status and server settings
+- `/help` - Display help information
+
+### Admin Commands (Require Administrator permission)
+
+- `/enableonjoin` - Enable verification prompt when users join
+- `/disableonjoin` - Disable verification on join
+- `/domainadd <domain>` - Add allowed email domain (e.g., `gmail.com`)
+- `/domainremove <domain>` - Remove allowed email domain
+- `/rolechange <rolename>` - Change the name of the verified role
+
+## Email Configuration
+
+### Gmail Setup
+1. Enable 2-factor authentication on your Google account
+2. Generate an "App Password" in Google Account settings
+3. Use the app password in `SMTP_PASS` (not your regular password)
+
+### Other Providers
+- **Outlook**: `smtp-mail.outlook.com:587`
+- **Yahoo**: `smtp.mail.yahoo.com:587`
+- **Custom SMTP**: Check with your email provider
+
+## How It Works
+
+1. User runs `/verify` in a server channel
+2. Bot shows a modal to collect email address
+3. Bot validates email domain (if restrictions are set)
+4. Bot sends 6-digit verification code to email
+5. User runs `/verifycode <code>` to complete verification
+6. Bot assigns the verified role automatically
+
+## Architecture
+
+- **Frontend**: Discord slash commands and modals
+- **Backend**: Vercel serverless functions
+- **Database**: MongoDB for user data and guild settings
+- **Email**: SMTP for sending verification codes
+- **Authentication**: Discord interaction verification
 
 ## Usage
 

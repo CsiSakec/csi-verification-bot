@@ -1,4 +1,73 @@
 const { verifyKey, InteractionType, InteractionResponseType } = require('discord-interactions');
+const mongoose = require('mongoose');
+const nodemailer = require('nodemailer');
+const fetch = require('node-fetch');
+require('dotenv').config();
+
+// Connect to MongoDB
+if (mongoose.connection.readyState === 0) {
+  mongoose.connect(process.env.MONGO_URI, {})
+    .then(() => console.log('Connected to MongoDB'))
+    .catch((err) => console.error(err));
+}
+
+// Schemas
+const UserSchema = new mongoose.Schema({
+  userid: String,
+  guildid: String,
+  email: String,
+  code: String,
+  verified: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now, expires: 600 } // 10 minutes expiry
+});
+
+const GuildSchema = new mongoose.Schema({
+  guildid: String,
+  domains: [String],
+  onjoin: { type: Boolean, default: false },
+  role: { type: String, default: "Verified" },
+});
+
+const User = mongoose.model("User", UserSchema);
+const Guild = mongoose.model("Guild", GuildSchema);
+
+// Email transporter
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  secure: process.env.SMTP_SECURE === "true",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+// Email verification function
+const sendVerificationEmail = async (email, verificationCode) => {
+  try {
+    await transporter.sendMail({
+      from: `"CSI Verification" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: "Discord Account Verification Code",
+      html: `
+        <div style="font-family: Arial, sans-serif; text-align: center; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+          <h2>Discord Account Verification</h2>
+          <p>Hello, <b>${email}</b></p>
+          <p>To complete your Discord verification, please use this code:</p>
+          <p style="font-size:24px; font-weight:bold; color:#5865F2; background:#f0f0f0; padding:10px; border-radius:5px;">${verificationCode}</p>
+          <p>This code will expire in 10 minutes. Please do not share it with anyone.</p>
+          <p>If you did not request this verification, please ignore this email.</p>
+          <hr>
+          <p style="color:#666;">Powered by CSI Discord Bot</p>
+        </div>`,
+    });
+    console.log(`Verification email sent to ${email}`);
+    return true;
+  } catch (err) {
+    console.error("Error sending verification email:", err);
+    return false;
+  }
+};
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -91,13 +160,36 @@ export default async function handler(req, res) {
           });
           
         case 'vstatus':
-          return res.status(200).json({
-            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-            data: {
-              content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n🔗 **Endpoint**: https://verification-bot-endpoint.vercel.app/\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n🏠 **Context**: Server Channel\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\``,
-              flags: 64 // Ephemeral
-            },
-          });
+          try {
+            const guildId = data?.guild_id;
+            let guildInfo = '';
+            
+            if (guildId) {
+              const guildData = await Guild.findOne({ guildid: guildId });
+              const domains = guildData?.domains?.length > 0 ? guildData.domains.join(', ') : 'None (all domains allowed)';
+              const onJoin = guildData?.onjoin ? 'Enabled' : 'Disabled';
+              const verifiedRole = guildData?.role || 'Verified';
+              
+              guildInfo = `\n\n**🔧 Current Server Settings:**\n• **Allowed Domains:** ${domains}\n• **Verify on Join:** ${onJoin}\n• **Verified Role:** ${verifiedRole}`;
+            }
+
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n🔗 **Endpoint**: https://verification-bot-endpoint.vercel.app/\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n🏠 **Context**: ${guildId ? 'Server Channel' : 'Direct Message'}\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\`${guildInfo}`,
+                flags: 64 // Ephemeral
+              },
+            });
+          } catch (error) {
+            console.error('Error fetching guild data:', error);
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n🔗 **Endpoint**: https://verification-bot-endpoint.vercel.app/\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\``,
+                flags: 64 // Ephemeral
+              },
+            });
+          }
           
         case 'help':
           return res.status(200).json({
@@ -109,20 +201,330 @@ export default async function handler(req, res) {
           });
           
         case 'verify':
+          // Check if user is in a server
+          if (!data?.guild_id) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `❌ **Email verification must be done in a server channel, not in DMs.**\n\nPlease use this command in a server where the bot is present.`,
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          // Show email input modal
           return res.status(200).json({
-            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            type: InteractionResponseType.MODAL,
             data: {
-              content: `� **Email Verification Process**\n\n🔄 **Starting verification...**\n\n*Note: In the full implementation, this would show an email input modal.*\n\nFor now, this confirms the verification system is working and ready to be enhanced with:\n• Email input modal\n• Database integration\n• Email sending\n• Role assignment\n\n✅ **Bot is ready for full verification implementation!**`,
-              flags: 64 // Ephemeral
-            },
+              custom_id: 'email_verification_modal',
+              title: 'Email Verification',
+              components: [
+                {
+                  type: 1, // Action Row
+                  components: [
+                    {
+                      type: 4, // Text Input
+                      custom_id: 'email_input',
+                      label: 'Enter your email address',
+                      style: 1, // Short
+                      placeholder: 'example@domain.com',
+                      required: true,
+                      max_length: 254
+                    }
+                  ]
+                }
+              ]
+            }
           });
           
         case 'verifycode':
           const code = data?.options?.find(opt => opt.name === 'code')?.value;
+          const userId = req.body.member?.user?.id || req.body.user?.id;
+          const guildId = data?.guild_id;
+
+          if (!code) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ Please provide a verification code.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          if (!guildId) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ This command must be used in a server channel.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          try {
+            // Find verification record
+            const verificationRecord = await User.findOne({
+              userid: userId,
+              guildid: guildId,
+              code: code,
+              verified: false
+            });
+
+            if (!verificationRecord) {
+              return res.status(200).json({
+                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                data: {
+                  content: '❌ Invalid or expired verification code. Please try verifying again with `/verify`.',
+                  flags: 64 // Ephemeral
+                },
+              });
+            }
+
+            // Mark as verified
+            verificationRecord.verified = true;
+            await verificationRecord.save();
+
+            // Get guild data for role name
+            const guildData = await Guild.findOne({ guildid: guildId });
+            const roleName = guildData?.role || 'Verified';
+
+            // Add role using Discord API
+            try {
+              // Get all roles in the guild
+              const rolesResponse = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
+                headers: {
+                  'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+                },
+              });
+
+              if (rolesResponse.ok) {
+                const roles = await rolesResponse.json();
+                const verifiedRole = roles.find(role => role.name === roleName);
+
+                if (verifiedRole) {
+                  const addRoleResponse = await fetch(
+                    `https://discord.com/api/v10/guilds/${guildId}/members/${userId}/roles/${verifiedRole.id}`,
+                    {
+                      method: 'PUT',
+                      headers: {
+                        'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+                        'Content-Type': 'application/json',
+                      },
+                    }
+                  );
+
+                  if (addRoleResponse.ok) {
+                    return res.status(200).json({
+                      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                      data: {
+                        content: `✅ **Email verification successful!**\n\n🎉 You have been verified and assigned the \`${roleName}\` role.\n📧 Email: \`${verificationRecord.email}\``,
+                        flags: 64 // Ephemeral
+                      },
+                    });
+                  } else {
+                    console.error('Failed to add role:', await addRoleResponse.text());
+                  }
+                } else {
+                  return res.status(200).json({
+                    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                    data: {
+                      content: `✅ **Email verification successful!**\n\n⚠️ The \`${roleName}\` role was not found. Please contact an administrator to create the role and assign it manually.`,
+                      flags: 64 // Ephemeral
+                    },
+                  });
+                }
+              }
+
+              // If role assignment failed, still mark as verified
+              return res.status(200).json({
+                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                data: {
+                  content: '✅ **Email verification successful!**\n\n⚠️ Could not automatically assign the verified role. Please contact an administrator.',
+                  flags: 64 // Ephemeral
+                },
+              });
+
+            } catch (roleError) {
+              console.error('Error adding role:', roleError);
+              return res.status(200).json({
+                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                data: {
+                  content: '✅ **Email verification successful!**\n\n⚠️ Could not automatically assign the verified role. Please contact an administrator.',
+                  flags: 64 // Ephemeral
+                },
+              });
+            }
+
+          } catch (error) {
+            console.error('Code verification error:', error);
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ An error occurred during code verification. Please try again.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+        case 'enableonjoin':
+          // Check if user has admin permissions
+          const memberPerms = req.body.member?.permissions;
+          if (!memberPerms || !(parseInt(memberPerms) & 0x8)) { // Administrator permission
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ You need Administrator permissions to use this command.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          await Guild.updateOne(
+            { guildid: guildId },
+            { onjoin: true },
+            { upsert: true }
+          );
           return res.status(200).json({
             type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
             data: {
-              content: `🔐 **Verification Code Processing**\n\n📝 Code received: \`${code}\`\n\n*Note: In the full implementation, this would:*\n• Validate the code against database\n• Check if email is verified\n• Assign verified role\n• Send confirmation\n\n✅ **Command structure is working correctly!**`,
+              content: '✅ Verification on member join has been **enabled**.',
+              flags: 64 // Ephemeral
+            },
+          });
+
+        case 'disableonjoin':
+          // Check if user has admin permissions
+          const memberPerms2 = req.body.member?.permissions;
+          if (!memberPerms2 || !(parseInt(memberPerms2) & 0x8)) { // Administrator permission
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ You need Administrator permissions to use this command.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          await Guild.updateOne(
+            { guildid: guildId },
+            { onjoin: false },
+            { upsert: true }
+          );
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: '✅ Verification on member join has been **disabled**.',
+              flags: 64 // Ephemeral
+            },
+          });
+
+        case 'domainadd':
+          const domainToAdd = data?.options?.find(opt => opt.name === 'domain')?.value;
+          // Check if user has admin permissions
+          const memberPerms3 = req.body.member?.permissions;
+          if (!memberPerms3 || !(parseInt(memberPerms3) & 0x8)) { // Administrator permission
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ You need Administrator permissions to use this command.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          if (!domainToAdd) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ Please provide a domain to add.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          await Guild.updateOne(
+            { guildid: guildId },
+            { $addToSet: { domains: domainToAdd.toLowerCase() } },
+            { upsert: true }
+          );
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: `✅ Domain \`${domainToAdd}\` has been added to the allowed list.`,
+              flags: 64 // Ephemeral
+            },
+          });
+
+        case 'domainremove':
+          const domainToRemove = data?.options?.find(opt => opt.name === 'domain')?.value;
+          // Check if user has admin permissions
+          const memberPerms4 = req.body.member?.permissions;
+          if (!memberPerms4 || !(parseInt(memberPerms4) & 0x8)) { // Administrator permission
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ You need Administrator permissions to use this command.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          if (!domainToRemove) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ Please provide a domain to remove.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          await Guild.updateOne(
+            { guildid: guildId },
+            { $pull: { domains: domainToRemove.toLowerCase() } }
+          );
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: `✅ Domain \`${domainToRemove}\` has been removed from the allowed list.`,
+              flags: 64 // Ephemeral
+            },
+          });
+
+        case 'rolechange':
+          const newRoleName = data?.options?.find(opt => opt.name === 'rolename')?.value;
+          // Check if user has admin permissions
+          const memberPerms5 = req.body.member?.permissions;
+          if (!memberPerms5 || !(parseInt(memberPerms5) & 0x8)) { // Administrator permission
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ You need Administrator permissions to use this command.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          if (!newRoleName) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ Please provide a new role name.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          await Guild.updateOne(
+            { guildid: guildId },
+            { role: newRoleName },
+            { upsert: true }
+          );
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: `✅ Verified role name has been changed to \`${newRoleName}\`.`,
               flags: 64 // Ephemeral
             },
           });
@@ -141,6 +543,128 @@ export default async function handler(req, res) {
     // Handle modal submissions
     if (type === InteractionType.MODAL_SUBMIT) {
       console.log('Modal submission received');
+      const customId = data?.custom_id;
+      const userId = req.body.member?.user?.id || req.body.user?.id;
+      const guildId = req.body.guild_id;
+
+      if (customId === 'email_verification_modal') {
+        const emailInput = data?.components?.[0]?.components?.[0]?.value;
+        
+        if (!emailInput) {
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: '❌ No email provided. Please try again.',
+              flags: 64 // Ephemeral
+            },
+          });
+        }
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(emailInput)) {
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: '❌ Invalid email format. Please enter a valid email address.',
+              flags: 64 // Ephemeral
+            },
+          });
+        }
+
+        try {
+          // Check if user already has a pending verification
+          const existingUser = await User.findOne({
+            userid: userId,
+            guildid: guildId,
+            verified: false
+          });
+
+          if (existingUser) {
+            await User.deleteOne({ _id: existingUser._id });
+          }
+
+          // Check if user is already verified
+          const verifiedUser = await User.findOne({
+            userid: userId,
+            guildid: guildId,
+            verified: true
+          });
+
+          if (verifiedUser) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '✅ You are already verified in this server!',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+          // Check allowed domains
+          const guildData = await Guild.findOne({ guildid: guildId });
+          if (guildData && guildData.domains && guildData.domains.length > 0) {
+            const emailDomain = emailInput.split('@')[1].toLowerCase();
+            const allowedDomains = guildData.domains.map(d => d.toLowerCase());
+            
+            if (!allowedDomains.includes(emailDomain)) {
+              return res.status(200).json({
+                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                data: {
+                  content: `❌ Email domain \`${emailDomain}\` is not allowed.\n\nAllowed domains: ${allowedDomains.join(', ')}`,
+                  flags: 64 // Ephemeral
+                },
+              });
+            }
+          }
+
+          // Generate verification code
+          const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+          // Save to database
+          const newUser = new User({
+            userid: userId,
+            guildid: guildId,
+            email: emailInput.toLowerCase(),
+            code: verificationCode,
+            verified: false
+          });
+
+          await newUser.save();
+
+          // Send verification email
+          const emailSent = await sendVerificationEmail(emailInput, verificationCode);
+
+          if (emailSent) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `📧 **Verification email sent to** \`${emailInput}\`\n\n✅ Please check your email for a 6-digit verification code.\n🔐 Use \`/verifycode <code>\` to complete verification.\n⏰ Code expires in 10 minutes.`,
+                flags: 64 // Ephemeral
+              },
+            });
+          } else {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '❌ Failed to send verification email. Please try again or contact an administrator.',
+                flags: 64 // Ephemeral
+              },
+            });
+          }
+
+        } catch (error) {
+          console.error('Email verification error:', error);
+          return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: '❌ An error occurred during verification. Please try again.',
+              flags: 64 // Ephemeral
+            },
+          });
+        }
+      }
+
       return res.status(200).json({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
         data: {
