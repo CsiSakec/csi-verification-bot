@@ -51,14 +51,15 @@ const sendVerificationEmail = async (email, verificationCode) => {
       subject: "Discord Account Verification Code",
       html: `
         <div style="font-family: Arial, sans-serif; text-align: center; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
-          <h2>Discord Account Verification</h2>
+          <h2 style="color: #5865F2;">SAKEC Discord Verification</h2>
           <p>Hello, <b>${email}</b></p>
-          <p>To complete your Discord verification, please use this code:</p>
-          <p style="font-size:24px; font-weight:bold; color:#5865F2; background:#f0f0f0; padding:10px; border-radius:5px;">${verificationCode}</p>
-          <p>This code will expire in 10 minutes. Please do not share it with anyone.</p>
+          <p>To complete your SAKEC Discord server verification, please use this code:</p>
+          <p style="font-size:24px; font-weight:bold; color:#5865F2; background:#f0f0f0; padding:15px; border-radius:8px; margin: 20px 0;">${verificationCode}</p>
+          <p>This code will expire in <b>10 minutes</b>. Please do not share it with anyone.</p>
           <p>If you did not request this verification, please ignore this email.</p>
-          <hr>
-          <p style="color:#666;">Powered by CSI Discord Bot</p>
+          <hr style="margin: 20px 0;">
+          <p style="color:#666; font-size: 14px;">🏫 SAKEC Discord Community<br>
+          🔒 Secure verification system</p>
         </div>`,
     });
     console.log(`Verification email sent to ${email}`);
@@ -169,7 +170,13 @@ export default async function handler(req, res) {
             
             if (guildId) {
               const guildData = await Guild.findOne({ guildid: guildId });
-              const domains = guildData?.domains?.length > 0 ? guildData.domains.join(', ') : 'None (all domains allowed)';
+              
+              // Default to sakec.ac.in if no domains are configured
+              let domains = 'sakec.ac.in (default)';
+              if (guildData && guildData.domains && guildData.domains.length > 0) {
+                domains = guildData.domains.join(', ');
+              }
+              
               const onJoin = guildData?.onjoin ? 'Enabled' : 'Disabled';
               const verifiedRole = guildData?.role || 'Verified';
               
@@ -605,19 +612,23 @@ export default async function handler(req, res) {
 
           // Check allowed domains
           const guildData = await Guild.findOne({ guildid: guildId });
+          
+          // Default to sakec.ac.in if no domains are configured
+          let allowedDomains = ['sakec.ac.in'];
           if (guildData && guildData.domains && guildData.domains.length > 0) {
-            const emailDomain = emailInput.split('@')[1].toLowerCase();
-            const allowedDomains = guildData.domains.map(d => d.toLowerCase());
-            
-            if (!allowedDomains.includes(emailDomain)) {
-              return res.status(200).json({
-                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                data: {
-                  content: `❌ Email domain \`${emailDomain}\` is not allowed.\n\nAllowed domains: ${allowedDomains.join(', ')}`,
-                  flags: 64 // Ephemeral
-                },
-              });
-            }
+            allowedDomains = guildData.domains.map(d => d.toLowerCase());
+          }
+          
+          const emailDomain = emailInput.split('@')[1].toLowerCase();
+          
+          if (!allowedDomains.includes(emailDomain)) {
+            return res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: `❌ **Email domain \`${emailDomain}\` is not allowed.**\n\n✅ **Allowed domains:** ${allowedDomains.join(', ')}\n\n💡 Only SAKEC students and staff can verify using their official email addresses.`,
+                flags: 64 // Ephemeral
+              },
+            });
           }
 
           // Generate verification code
