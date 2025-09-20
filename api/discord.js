@@ -94,13 +94,17 @@ const sendVerificationEmail = async (email, verificationCode) => {
 // Async function to process verification without blocking Discord response
 const processVerificationAsync = async (verificationRecord, guildId, userId, interactionToken) => {
   try {
+    console.log('Starting async verification processing...', { interactionToken: !!interactionToken });
+    
     // Mark as verified
     verificationRecord.verified = true;
     await verificationRecord.save();
+    console.log('User marked as verified in database');
 
     // Get guild data for role name
     const guildData = await Guild.findOne({ guildid: guildId });
     const roleName = guildData?.role || 'verified';
+    console.log('Guild role name:', roleName);
 
     // Add role using Discord API
     const rolesResponse = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
@@ -115,6 +119,7 @@ const processVerificationAsync = async (verificationRecord, guildId, userId, int
 
     if (rolesResponse.ok) {
       const roles = await rolesResponse.json();
+      console.log('Fetched guild roles, count:', roles.length);
       
       // First try exact match, then case-insensitive match
       let verifiedRole = roles.find(role => role.name === roleName);
@@ -132,6 +137,7 @@ const processVerificationAsync = async (verificationRecord, guildId, userId, int
       }
 
       if (verifiedRole) {
+        console.log('Found verified role:', verifiedRole.name);
         const addRoleResponse = await fetch(
           `https://discord.com/api/v10/guilds/${guildId}/members/${userId}/roles/${verifiedRole.id}`,
           {
@@ -145,9 +151,11 @@ const processVerificationAsync = async (verificationRecord, guildId, userId, int
 
         if (addRoleResponse.ok) {
           roleStatus = `\n🎉 You have been assigned the \`${verifiedRole.name}\` role.`;
+          console.log('Role assigned successfully');
 
           // Change nickname to email prefix
           const emailPrefix = verificationRecord.email.split('@')[0];
+          console.log('Attempting to change nickname to:', emailPrefix);
           
           const changeNicknameResponse = await fetch(
             `https://discord.com/api/v10/guilds/${guildId}/members/${userId}`,
@@ -165,22 +173,36 @@ const processVerificationAsync = async (verificationRecord, guildId, userId, int
 
           if (changeNicknameResponse.ok) {
             nicknameStatus = `\n👤 Your server nickname has been changed to: \`${emailPrefix}\``;
+            console.log('Nickname changed successfully');
           } else {
+            const errorText = await changeNicknameResponse.text();
+            console.error('Failed to change nickname:', errorText);
             nicknameStatus = '\n⚠️ Could not change your server nickname automatically.';
           }
         } else {
+          const errorText = await addRoleResponse.text();
+          console.error('Failed to add role:', errorText);
           roleStatus = '\n⚠️ Could not automatically assign the verified role.';
         }
       } else {
         const availableRoles = roles.filter(role => !role.managed && role.name !== '@everyone').map(role => role.name);
         roleStatus = `\n⚠️ No role named \`${roleName}\` found.\n💡 Use \`/rolechange <exact_role_name>\` to set the correct role.\n📋 Available roles: ${availableRoles.slice(0, 5).join(', ')}${availableRoles.length > 5 ? '...' : ''}`;
+        console.log('Role not found, available roles:', availableRoles);
       }
     } else {
+      const errorText = await rolesResponse.text();
+      console.error('Failed to fetch roles:', errorText);
       roleStatus = '\n⚠️ Could not fetch server roles.';
     }
 
     // Update the original response using follow-up
-    await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}/messages/@original`, {
+    if (!interactionToken) {
+      console.error('No interaction token available for message update');
+      return;
+    }
+
+    console.log('Updating original message...');
+    const updateResponse = await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}/messages/@original`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
@@ -192,21 +214,34 @@ const processVerificationAsync = async (verificationRecord, guildId, userId, int
       })
     });
 
+    if (updateResponse.ok) {
+      console.log('Message updated successfully');
+    } else {
+      const errorText = await updateResponse.text();
+      console.error('Failed to update message:', errorText);
+    }
+
   } catch (error) {
     console.error('Async verification processing error:', error);
     
     // Update with error message
-    await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}/messages/@original`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        content: '❌ An error occurred during verification processing. Please contact an administrator.',
-        flags: 64
-      })
-    });
+    if (interactionToken) {
+      try {
+        await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}/messages/@original`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            content: '❌ An error occurred during verification processing. Please contact an administrator.',
+            flags: 64
+          })
+        });
+      } catch (updateError) {
+        console.error('Failed to update message with error:', updateError);
+      }
+    }
   }
 };
 
@@ -433,8 +468,9 @@ export default async function handler(req, res) {
               },
             });
 
-            // Process verification asynchronously
-            processVerificationAsync(verificationRecord, guildId, userId, req.body.token);
+            // Process verification asynchronously - get token from interaction
+            const interactionToken = req.body.token;
+            processVerificationAsync(verificationRecord, guildId, userId, interactionToken);
             return;
 
           } catch (error) {
