@@ -207,7 +207,7 @@ export default async function handler(req, res) {
             return res.status(200).json({
               type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
               data: {
-                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n🔗 **Endpoint**: https://verification-bot-endpoint.vercel.app/\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n🏠 **Context**: ${guildId ? 'Server Channel' : 'Direct Message'}\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\`, \`/resetuser\`${guildInfo}`,
+                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n🏠 **Context**: ${guildId ? 'Server Channel' : 'Direct Message'}\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\`, \`/resetuser\`${guildInfo}`,
                 flags: 64 // Ephemeral
               },
             });
@@ -216,7 +216,7 @@ export default async function handler(req, res) {
             return res.status(200).json({
               type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
               data: {
-                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n🔗 **Endpoint**: https://verification-bot-endpoint.vercel.app/\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\`, \`/resetuser\``,
+                content: `📊 **Bot Status**\n\n✅ **Online** - Running on Vercel\n⚡ **Architecture**: Webhook-only (No 24/7 server needed)\n\n📝 **Available Commands**:\n• \`/verify\` - Start email verification\n• \`/verifycode\` - Complete verification\n• \`/vping\` - Check response time\n• \`/vstatus\` - Show this status\n• \`/help\` - Show help information\n\n👑 **Admin Commands**: \`/enableonjoin\`, \`/disableonjoin\`, \`/domainadd\`, \`/domainremove\`, \`/rolechange\`, \`/resetuser\``,
                 flags: 64 // Ephemeral
               },
             });
