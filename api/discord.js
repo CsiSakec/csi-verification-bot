@@ -388,7 +388,6 @@ export default async function handler(req, res) {
                 roleStatus = '\n⚠️ Could not fetch server roles.';
               }
             } catch (roleError) {
-              console.error('Role assignment error:', roleError.message);
               roleStatus = '\n⚠️ Role assignment timed out.';
             }
 
@@ -401,7 +400,6 @@ export default async function handler(req, res) {
             });
 
           } catch (error) {
-            console.log('Code verification error:', error);
             return res.status(200).json({
               type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
               data: {
