@@ -93,25 +93,37 @@ const sendVerificationEmail = async (email, verificationCode) => {
 
 // Async function to process verification without blocking Discord response
 const processVerificationAsync = async (verificationRecord, guildId, userId, interactionToken) => {
+  console.log('=== ASYNC VERIFICATION START ===');
+  console.log('Input params:', { 
+    verificationRecord: !!verificationRecord, 
+    guildId, 
+    userId, 
+    interactionToken: !!interactionToken,
+    email: verificationRecord?.email 
+  });
+  
   try {
-    console.log('Starting async verification processing...', { interactionToken: !!interactionToken });
-    
+    console.log('Step 1: Marking user as verified...');
     // Mark as verified
     verificationRecord.verified = true;
     await verificationRecord.save();
-    console.log('User marked as verified in database');
+    console.log('✅ User marked as verified in database');
 
+    console.log('Step 2: Getting guild data...');
     // Get guild data for role name
     const guildData = await Guild.findOne({ guildid: guildId });
     const roleName = guildData?.role || 'verified';
-    console.log('Guild role name:', roleName);
+    console.log('✅ Guild role name:', roleName);
 
+    console.log('Step 3: Fetching guild roles...');
     // Add role using Discord API
     const rolesResponse = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
       headers: {
         'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
       },
     });
+
+    console.log('Roles response status:', rolesResponse.status);
 
     let finalMessage = '✅ **Email verification successful!**';
     let roleStatus = '';
@@ -456,7 +468,7 @@ export default async function handler(req, res) {
 
             // Respond with deferred message (thinking...)
             res.status(200).json({
-              type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+              type: 5, // DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
               data: {
                 flags: 64 // Ephemeral
               }
@@ -464,7 +476,33 @@ export default async function handler(req, res) {
 
             // Process verification asynchronously - get token from interaction
             const interactionToken = req.body.token;
-            processVerificationAsync(verificationRecord, guildId, userId, interactionToken);
+            
+            // Add timeout to prevent hanging
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Async verification timeout')), 15000)
+            );
+            
+            Promise.race([
+              processVerificationAsync(verificationRecord, guildId, userId, interactionToken),
+              timeoutPromise
+            ]).catch(error => {
+              console.error('Async verification failed:', error);
+              // Send fallback message
+              if (interactionToken) {
+                fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    content: '✅ **Email verification successful!** \n\n⚠️ Role assignment may have failed. Please contact an administrator if you don\'t have the verified role.',
+                    flags: 64
+                  })
+                }).catch(e => console.error('Fallback message failed:', e));
+              }
+            });
+            
             return;
 
           } catch (error) {
