@@ -356,10 +356,35 @@ export default async function handler(req, res) {
                   );
 
                   if (addRoleResponse.ok) {
+                    // Change nickname to email prefix (part before @)
+                    const emailPrefix = verificationRecord.email.split('@')[0];
+                    
+                    const changeNicknameResponse = await fetch(
+                      `https://discord.com/api/v10/guilds/${guildId}/members/${userId}`,
+                      {
+                        method: 'PATCH',
+                        headers: {
+                          'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          nick: emailPrefix
+                        })
+                      }
+                    );
+
+                    let nicknameStatus = '';
+                    if (changeNicknameResponse.ok) {
+                      nicknameStatus = `\n👤 Your server nickname has been changed to: \`${emailPrefix}\``;
+                    } else {
+                      console.error('Failed to change nickname:', await changeNicknameResponse.text());
+                      nicknameStatus = '\n⚠️ Could not change your server nickname automatically.';
+                    }
+
                     return res.status(200).json({
                       type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
                       data: {
-                        content: `✅ **Email verification successful!**\n\n🎉 You have been verified and assigned the \`${verifiedRole.name}\` role.\n📧 Email: \`${verificationRecord.email}\``,
+                        content: `✅ **Email verification successful!**\n\n🎉 You have been verified and assigned the \`${verifiedRole.name}\` role.\n📧 Email: \`${verificationRecord.email}\`${nicknameStatus}`,
                         flags: 64 // Ephemeral
                       },
                     });
