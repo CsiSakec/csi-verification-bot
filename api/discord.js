@@ -195,15 +195,10 @@ const processVerificationAsync = async (verificationRecord, guildId, userId, int
       roleStatus = '\n⚠️ Could not fetch server roles.';
     }
 
-    // Update the original response using follow-up
-    if (!interactionToken) {
-      console.error('No interaction token available for message update');
-      return;
-    }
-
-    console.log('Updating original message...');
-    const updateResponse = await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}/messages/@original`, {
-      method: 'PATCH',
+    // Send follow-up message instead of updating original
+    console.log('Sending follow-up message...');
+    const followUpResponse = await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}`, {
+      method: 'POST',
       headers: {
         'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
         'Content-Type': 'application/json',
@@ -214,21 +209,21 @@ const processVerificationAsync = async (verificationRecord, guildId, userId, int
       })
     });
 
-    if (updateResponse.ok) {
-      console.log('Message updated successfully');
+    if (followUpResponse.ok) {
+      console.log('Follow-up message sent successfully');
     } else {
-      const errorText = await updateResponse.text();
-      console.error('Failed to update message:', errorText);
+      const errorText = await followUpResponse.text();
+      console.error('Failed to send follow-up message:', errorText);
     }
 
   } catch (error) {
     console.error('Async verification processing error:', error);
     
-    // Update with error message
+    // Send error follow-up message
     if (interactionToken) {
       try {
-        await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}/messages/@original`, {
-          method: 'PATCH',
+        await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}`, {
+          method: 'POST',
           headers: {
             'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
             'Content-Type': 'application/json',
@@ -239,7 +234,7 @@ const processVerificationAsync = async (verificationRecord, guildId, userId, int
           })
         });
       } catch (updateError) {
-        console.error('Failed to update message with error:', updateError);
+        console.error('Failed to send error follow-up message:', updateError);
       }
     }
   }
@@ -459,13 +454,12 @@ export default async function handler(req, res) {
               });
             }
 
-            // Respond immediately to Discord to prevent timeout
+            // Respond with deferred message (thinking...)
             res.status(200).json({
-              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
               data: {
-                content: '🔄 **Processing verification...** Please wait a moment.',
                 flags: 64 // Ephemeral
-              },
+              }
             });
 
             // Process verification asynchronously - get token from interaction
