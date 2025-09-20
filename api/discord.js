@@ -19,8 +19,9 @@ const connectToDatabase = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI, {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
+      serverSelectionTimeoutMS: 2000, // Reduced to 2 seconds
+      socketTimeoutMS: 30000, // Reduced socket timeout
+      connectTimeoutMS: 2000, // Connection timeout
     });
     isConnected = true;
     console.log('Connected to MongoDB');
@@ -87,6 +88,125 @@ const sendVerificationEmail = async (email, verificationCode) => {
   } catch (err) {
     console.error("Error sending verification email:", err);
     return false;
+  }
+};
+
+// Async function to process verification without blocking Discord response
+const processVerificationAsync = async (verificationRecord, guildId, userId, interactionToken) => {
+  try {
+    // Mark as verified
+    verificationRecord.verified = true;
+    await verificationRecord.save();
+
+    // Get guild data for role name
+    const guildData = await Guild.findOne({ guildid: guildId });
+    const roleName = guildData?.role || 'verified';
+
+    // Add role using Discord API
+    const rolesResponse = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
+      headers: {
+        'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+      },
+    });
+
+    let finalMessage = '✅ **Email verification successful!**';
+    let roleStatus = '';
+    let nicknameStatus = '';
+
+    if (rolesResponse.ok) {
+      const roles = await rolesResponse.json();
+      
+      // First try exact match, then case-insensitive match
+      let verifiedRole = roles.find(role => role.name === roleName);
+      
+      if (!verifiedRole) {
+        verifiedRole = roles.find(role => role.name.toLowerCase() === roleName.toLowerCase());
+        
+        if (verifiedRole) {
+          await Guild.updateOne(
+            { guildid: guildId },
+            { role: verifiedRole.name },
+            { upsert: true }
+          );
+        }
+      }
+
+      if (verifiedRole) {
+        const addRoleResponse = await fetch(
+          `https://discord.com/api/v10/guilds/${guildId}/members/${userId}/roles/${verifiedRole.id}`,
+          {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (addRoleResponse.ok) {
+          roleStatus = `\n🎉 You have been assigned the \`${verifiedRole.name}\` role.`;
+
+          // Change nickname to email prefix
+          const emailPrefix = verificationRecord.email.split('@')[0];
+          
+          const changeNicknameResponse = await fetch(
+            `https://discord.com/api/v10/guilds/${guildId}/members/${userId}`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                nick: emailPrefix
+              })
+            }
+          );
+
+          if (changeNicknameResponse.ok) {
+            nicknameStatus = `\n👤 Your server nickname has been changed to: \`${emailPrefix}\``;
+          } else {
+            nicknameStatus = '\n⚠️ Could not change your server nickname automatically.';
+          }
+        } else {
+          roleStatus = '\n⚠️ Could not automatically assign the verified role.';
+        }
+      } else {
+        const availableRoles = roles.filter(role => !role.managed && role.name !== '@everyone').map(role => role.name);
+        roleStatus = `\n⚠️ No role named \`${roleName}\` found.\n💡 Use \`/rolechange <exact_role_name>\` to set the correct role.\n📋 Available roles: ${availableRoles.slice(0, 5).join(', ')}${availableRoles.length > 5 ? '...' : ''}`;
+      }
+    } else {
+      roleStatus = '\n⚠️ Could not fetch server roles.';
+    }
+
+    // Update the original response using follow-up
+    await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}/messages/@original`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: `${finalMessage}${roleStatus}\n📧 Email: \`${verificationRecord.email}\`${nicknameStatus}`,
+        flags: 64
+      })
+    });
+
+  } catch (error) {
+    console.error('Async verification processing error:', error);
+    
+    // Update with error message
+    await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interactionToken}/messages/@original`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: '❌ An error occurred during verification processing. Please contact an administrator.',
+        flags: 64
+      })
+    });
   }
 };
 
@@ -286,7 +406,7 @@ export default async function handler(req, res) {
           }
 
           try {
-            // Find verification record
+            // Quick validation first - respond immediately to Discord
             const verificationRecord = await User.findOne({
               userid: userId,
               guildid: guildId,
@@ -304,130 +424,21 @@ export default async function handler(req, res) {
               });
             }
 
-            // Mark as verified
-            verificationRecord.verified = true;
-            await verificationRecord.save();
+            // Respond immediately to Discord to prevent timeout
+            res.status(200).json({
+              type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: {
+                content: '🔄 **Processing verification...** Please wait a moment.',
+                flags: 64 // Ephemeral
+              },
+            });
 
-            // Get guild data for role name
-            const guildData = await Guild.findOne({ guildid: guildId });
-            const roleName = guildData?.role || 'verified';
-
-            // Add role using Discord API
-            try {
-              // Get all roles in the guild
-              const rolesResponse = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
-                headers: {
-                  'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
-                },
-              });
-
-              if (rolesResponse.ok) {
-                const roles = await rolesResponse.json();
-                
-                // First try exact match, then case-insensitive match
-                let verifiedRole = roles.find(role => role.name === roleName);
-                
-                if (!verifiedRole) {
-                  // Try case-insensitive search
-                  verifiedRole = roles.find(role => role.name.toLowerCase() === roleName.toLowerCase());
-                  
-                  // If found with different case, update the guild config to match the actual role name
-                  if (verifiedRole) {
-                    // Found role with different case - update config
-                    await Guild.updateOne(
-                      { guildid: guildId },
-                      { role: verifiedRole.name },
-                      { upsert: true }
-                    );
-                    // Update guild config to use the correct role name
-                  }
-                }
-
-                if (verifiedRole) {
-                  const addRoleResponse = await fetch(
-                    `https://discord.com/api/v10/guilds/${guildId}/members/${userId}/roles/${verifiedRole.id}`,
-                    {
-                      method: 'PUT',
-                      headers: {
-                        'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
-                        'Content-Type': 'application/json',
-                      },
-                    }
-                  );
-
-                  if (addRoleResponse.ok) {
-                    // Change nickname to email prefix (part before @)
-                    const emailPrefix = verificationRecord.email.split('@')[0];
-                    
-                    const changeNicknameResponse = await fetch(
-                      `https://discord.com/api/v10/guilds/${guildId}/members/${userId}`,
-                      {
-                        method: 'PATCH',
-                        headers: {
-                          'Authorization': `Bot ${process.env.DISCORD_TOKEN}`,
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          nick: emailPrefix
-                        })
-                      }
-                    );
-
-                    let nicknameStatus = '';
-                    if (changeNicknameResponse.ok) {
-                      nicknameStatus = `\n👤 Your server nickname has been changed to: \`${emailPrefix}\``;
-                    } else {
-                      console.error('Failed to change nickname:', await changeNicknameResponse.text());
-                      nicknameStatus = '\n⚠️ Could not change your server nickname automatically.';
-                    }
-
-                    return res.status(200).json({
-                      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                      data: {
-                        content: `✅ **Email verification successful!**\n\n🎉 You have been verified and assigned the \`${verifiedRole.name}\` role.\n📧 Email: \`${verificationRecord.email}\`${nicknameStatus}`,
-                        flags: 64 // Ephemeral
-                      },
-                    });
-                  } else {
-                    console.error('Failed to add role:', await addRoleResponse.text());
-                  }
-                } else {
-                  // Log available roles for debugging
-                  const availableRoles = roles.filter(role => !role.managed && role.name !== '@everyone').map(role => role.name);
-                  // Role not found
-                  
-                  return res.status(200).json({
-                    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                    data: {
-                      content: `✅ **Email verification successful!**\n\n⚠️ No role named \`${roleName}\` (or similar) was found.\n\n💡 Use \`/rolechange <exact_role_name>\` to set the correct role name.\n\n📋 Available roles: ${availableRoles.slice(0, 5).join(', ')}${availableRoles.length > 5 ? '...' : ''}`,
-                      flags: 64 // Ephemeral
-                    },
-                  });
-                }
-              }
-
-              // If role assignment failed, still mark as verified
-              return res.status(200).json({
-                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                data: {
-                  content: '✅ **Email verification successful!**\n\n⚠️ Could not automatically assign the verified role. Please contact an administrator.',
-                  flags: 64 // Ephemeral
-                },
-              });
-
-            } catch (roleError) {
-              console.error('Error adding role:', roleError);
-              return res.status(200).json({
-                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                data: {
-                  content: '✅ **Email verification successful!**\n\n⚠️ Could not automatically assign the verified role. Please contact an administrator.',
-                  flags: 64 // Ephemeral
-                },
-              });
-            }
+            // Process verification asynchronously
+            processVerificationAsync(verificationRecord, guildId, userId, req.body.token);
+            return;
 
           } catch (error) {
-            console.error('Code verification error:', error);
+            console.log('Code verification error:', error);
             return res.status(200).json({
               type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
               data: {
