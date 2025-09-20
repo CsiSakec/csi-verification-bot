@@ -39,7 +39,13 @@ const UserSchema = new mongoose.Schema({
   email: String,
   code: String,
   verified: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now, expires: 600 } // 10 minutes expiry
+  createdAt: { type: Date, default: Date.now }
+});
+
+// Create TTL index only for unverified records (expires after 10 minutes)
+UserSchema.index({ createdAt: 1 }, { 
+  expireAfterSeconds: 600, // 10 minutes
+  partialFilterExpression: { verified: false } // Only apply to unverified records
 });
 
 const GuildSchema = new mongoose.Schema({
